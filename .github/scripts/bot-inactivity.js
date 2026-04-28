@@ -173,7 +173,7 @@ async function findWorkingCommandOnIssue(github, owner, repo, issueNum, relevant
   const ctx = buildCtx(github, owner, repo, issueNum);
   const comments = await fetchComments(ctx);
 
-  let latest = null;
+  let latest = -Infinity;
   let latestComment = null;
 
   for (const c of comments) {
@@ -182,7 +182,7 @@ async function findWorkingCommandOnIssue(github, owner, repo, issueNum, relevant
     if (!isWorkingCommand(c.body)) continue;
 
     const t = new Date(c.created_at).getTime();
-    if (latest === null || t > latest) {
+    if (t > latest) {
       latest = t;
       latestComment = c;
     }
@@ -262,10 +262,9 @@ async function getLastAssignedDate(github, owner, repo, number) {
 
 // ─── Activity computation ────────────────────────────────────────────────────
 
-async function computePRLastActivity(github, owner, repo, pr, options = {}) {
+async function computePRLastActivity(github, owner, repo, pr) {
   let latest = new Date(pr.created_at).getTime();
   const participants = collectParticipants(pr);
-  let workingComment = null;
 
   if (participants.size > 0) {
     const d = await getLastRelevantCommentDate(github, owner, repo, pr.number, participants);
@@ -277,23 +276,7 @@ async function computePRLastActivity(github, owner, repo, pr, options = {}) {
     latest = latestOf(latest, d);
   }
 
-  latest = latestOf(latest, await getLastUnblockedDate(github, owner, repo, pr.number));
-
-  const linkedIssueNums = parseIssueNumbers(pr.body || '');
-  for (const issueNum of linkedIssueNums) {
-    const result = await findWorkingCommandOnIssue(github, owner, repo, issueNum, participants);
-    if (result) {
-      latest = latestOf(latest, new Date(result.created_at).getTime());
-      if (!workingComment || new Date(result.created_at) > new Date(workingComment.created_at)) {
-        workingComment = result.comment;
-      }
-    }
-  }
-
-  if (options.includeWorkingComment) {
-    return { timestamp: latest, workingComment };
-  }
-  return latest;
+  return latestOf(latest, await getLastUnblockedDate(github, owner, repo, pr.number));
 }
 
 /**
@@ -663,19 +646,25 @@ module.exports = async function ({ github, context, getNow = () => Date.now() })
     }
 
     let lastActivity;
-    let workingComment = null;
     if (hasLabel(pr, LABELS.NEEDS_REVISION)) {
       const revisionLabeledAt = await getLastNeedsRevisionLabeledDate(github, owner, repo, pr.number);
-      const prActivityResult = await computePRLastActivity(github, owner, repo, pr, { includeWorkingComment: true });
-      lastActivity = latestOf(prActivityResult.timestamp, revisionLabeledAt);
-      workingComment = prActivityResult.workingComment;
+      const prActivity = await computePRLastActivity(github, owner, repo, pr);
+      lastActivity = latestOf(prActivity, revisionLabeledAt);
     } else {
-      const prActivityResult = await computePRLastActivity(github, owner, repo, pr, { includeWorkingComment: true });
-      lastActivity = prActivityResult.timestamp;
-      workingComment = prActivityResult.workingComment;
+      lastActivity = await computePRLastActivity(github, owner, repo, pr);
     }
 
-    // Add reaction if /working command was found on linked issue
+    const participants = collectParticipants(pr);
+    const linkedIssueNums = parseIssueNumbers(pr.body || '');
+    let workingComment = null;
+    for (const issueNum of linkedIssueNums) {
+      const result = await findWorkingCommandOnIssue(github, owner, repo, issueNum, participants);
+      if (result && (!workingComment || new Date(result.created_at) > new Date(workingComment.created_at))) {
+        workingComment = result.comment;
+        lastActivity = latestOf(lastActivity, new Date(result.created_at).getTime());
+      }
+    }
+
     if (workingComment) {
       try {
         await github.rest.reactions.createForIssueComment({

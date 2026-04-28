@@ -193,11 +193,11 @@ function makeAssignedEvent(createdAt) {
   return { event: 'assigned', created_at: createdAt };
 }
 
-function makeComment(userLogin, createdAt, { isBot = false } = {}) {
+function makeComment(userLogin, createdAt, { isBot = false, body = null } = {}) {
   return {
     id: Math.floor(Math.random() * 100000),
     user: { login: userLogin, type: isBot ? 'Bot' : 'User' },
-    body: `Comment from ${userLogin}`,
+    body: body || `Comment from ${userLogin}`,
     created_at: createdAt,
   };
 }
@@ -797,7 +797,7 @@ const scenarios = [
         250: [makeLabeledEvent(LABELS.NEEDS_REVISION, daysAgo(8))], 
       },
     }),
-    expect: {
+expect: {
       itemsClosed: [250],
       closureCommentOn: [250],
       assigneesRemoved: [{ issue_number: 250, assignees: ['uri'] }],
@@ -899,6 +899,96 @@ const scenarios = [
       linkedIssueCleaned: [91],
       assigneesRemovedOn: [90, 91],
       commentsCreatedCount: 2,
+    },
+  },
+
+  // ── 29 ─────────────────────────────────────────────────────────────────────
+  {
+    name: 'PR: /working command on linked issue — no action (not stale)',
+    description: 'When author posts /working on linked issue, the PR should not be flagged as stale.',
+    github: createMockGithub({
+      openPRs: [
+        makePR(500, {
+          createdAt: daysAgo(8),
+          assignees: ['alice'],
+          authorLogin: 'alice',
+          body: 'Fixes #501',
+        }),
+      ],
+      assignedIssues: [
+        makeIssue(501, {
+          createdAt: daysAgo(8),
+          assignees: ['alice'],
+          labels: [LABELS.IN_PROGRESS],
+        }),
+      ],
+      commentsByNumber: {
+        501: [makeComment('alice', daysAgo(1), { body: '/working' })],
+      },
+      eventsByNumber: {
+        501: [makeAssignedEvent(daysAgo(8))],
+      },
+    }),
+    expect: {
+      itemsClosed: [],
+      commentsCreated: 0,
+      labelsAdded: 0,
+      assigneesRemoved: 0,
+    },
+  },
+
+  // ── 30 ─────────────────────────────────────────────────────────────────────
+  {
+    name: 'PR: regular comment (not /working) on linked issue — still stale, closed',
+    description: 'A regular comment without /working on linked issue should NOT reset the clock.',
+    github: createMockGithub({
+      openPRs: [
+        makePR(510, {
+          createdAt: daysAgo(8),
+          assignees: ['bob'],
+          authorLogin: 'bob',
+          body: 'Fixes #511',
+        }),
+      ],
+      assignedIssues: [
+        makeIssue(511, {
+          createdAt: daysAgo(8),
+          assignees: ['bob'],
+          labels: [LABELS.IN_PROGRESS],
+        }),
+      ],
+      commentsByNumber: {
+        511: [makeComment('bob', daysAgo(1), { body: 'Still working on this, will update soon!' })],
+      },
+      eventsByNumber: {
+        511: [makeAssignedEvent(daysAgo(8))],
+      },
+    }),
+    expect: {
+      itemsClosed: [510],
+      closureCommentOn: [510],
+      assigneesRemoved: [{ issue_number: 510, assignees: ['bob'] }],
+    },
+  },
+
+  // ── 31 ─────────────────────────────────────────────────────────────────────
+  {
+    name: 'PR: no linked issues — stale behavior unchanged',
+    description: 'A PR with no linked issues should behave exactly as before.',
+    github: createMockGithub({
+      openPRs: [
+        makePR(520, {
+          createdAt: daysAgo(8),
+          assignees: ['charlie'],
+          authorLogin: 'charlie',
+          body: 'Add new feature',
+        }),
+      ],
+    }),
+    expect: {
+      itemsClosed: [520],
+      closureCommentOn: [520],
+      assigneesRemoved: [{ issue_number: 520, assignees: ['charlie'] }],
     },
   },
 ];

@@ -12,6 +12,7 @@
 //   - A non-bot comment on the item by the author or any assignee
 //   - A commit pushed to a PR branch by the PR author
 //   - Removal of the "status: blocked" label (unblocking counts as activity)
+//   - The /working command on a linked issue by the PR author or assignee
 //
 // PR review state:
 //   - "status: needs review"   → skipped entirely (waiting on maintainers)
@@ -110,6 +111,15 @@ function extractCommitDate(commit) {
 }
 
 /**
+ * Checks if a comment body contains the "/working" command.
+ * @param {string} body - Comment body text.
+ * @returns {boolean}
+ */
+function isWorkingCommand(body) {
+  return typeof body === 'string' && /(^|\s)\/working(\s|$)/i.test(body);
+}
+
+/**
  * Returns the timestamp (ms) of the most recent non-bot comment posted by any
  * of the given usernames, or null if none found.
  *
@@ -157,6 +167,28 @@ async function getLastAuthorCommitDate(github, owner, repo, prNumber, authorLogi
     latest = latestOf(latest === null ? -Infinity : latest, dateStr ? new Date(dateStr).getTime() : -Infinity);
   }
   return latest === null || latest === -Infinity ? null : latest;
+}
+
+async function findWorkingCommandOnIssue(github, owner, repo, issueNum, relevantLogins) {
+  const ctx = buildCtx(github, owner, repo, issueNum);
+  const comments = await fetchComments(ctx);
+
+  let latest = null;
+  let latestComment = null;
+
+  for (const c of comments) {
+    if (!c.user || c.user.type === 'Bot') continue;
+    if (!relevantLogins.has(c.user.login.toLowerCase())) continue;
+    if (!isWorkingCommand(c.body)) continue;
+
+    const t = new Date(c.created_at).getTime();
+    if (latest === null || t > latest) {
+      latest = t;
+      latestComment = c;
+    }
+  }
+
+  return latestComment ? { comment: latestComment, created_at: latestComment.created_at } : null;
 }
 
 /**
@@ -230,22 +262,10 @@ async function getLastAssignedDate(github, owner, repo, number) {
 
 // ─── Activity computation ────────────────────────────────────────────────────
 
-/**
- * Computes the last meaningful activity timestamp (ms) for a PR.
- * Considers: relevant comments (by PR author/assignees), commits by the PR
- * author, and removal of the blocked label.
- *
- * Also used by computeIssueLastActivity when evaluating linked open PRs.
- *
- * @param {object} github
- * @param {string} owner
- * @param {string} repo
- * @param {object} pr - GitHub PR object.
- * @returns {Promise<number>}
- */
-async function computePRLastActivity(github, owner, repo, pr) {
+async function computePRLastActivity(github, owner, repo, pr, options = {}) {
   let latest = new Date(pr.created_at).getTime();
   const participants = collectParticipants(pr);
+  let workingComment = null;
 
   if (participants.size > 0) {
     const d = await getLastRelevantCommentDate(github, owner, repo, pr.number, participants);
@@ -257,7 +277,23 @@ async function computePRLastActivity(github, owner, repo, pr) {
     latest = latestOf(latest, d);
   }
 
-  return latestOf(latest, await getLastUnblockedDate(github, owner, repo, pr.number));
+  latest = latestOf(latest, await getLastUnblockedDate(github, owner, repo, pr.number));
+
+  const linkedIssueNums = parseIssueNumbers(pr.body || '');
+  for (const issueNum of linkedIssueNums) {
+    const result = await findWorkingCommandOnIssue(github, owner, repo, issueNum, participants);
+    if (result) {
+      latest = latestOf(latest, new Date(result.created_at).getTime());
+      if (!workingComment || new Date(result.created_at) > new Date(workingComment.created_at)) {
+        workingComment = result.comment;
+      }
+    }
+  }
+
+  if (options.includeWorkingComment) {
+    return { timestamp: latest, workingComment };
+  }
+  return latest;
 }
 
 /**
@@ -306,13 +342,17 @@ function buildWarningComment(assigneeLogins, itemType) {
     ? assigneeLogins.map(l => `@${l}`).join(', ')
     : 'there';
 
+  const activityHint = itemType === 'PR'
+    ? "To stay active, comment `/working` on the linked **issue** (not this PR) or push a new commit."
+    : "If you're still on it, leave a comment to let us know!";
+
   return [
     WARN_MARKER,
     `👋 Hey ${mentions}! This ${itemType} has been inactive for 5 days.`,
     '',
     'Are you still working on this? We will close this in 2 days if we see no further activity.',
     '',
-    "If you're still on it, leave a comment to let us know! If you'd like to step down, comment `/unassign`.",
+    `${activityHint} If you'd like to step down, comment \`/unassign\`.`,
   ].join('\n');
 }
 
@@ -623,12 +663,31 @@ module.exports = async function ({ github, context, getNow = () => Date.now() })
     }
 
     let lastActivity;
+    let workingComment = null;
     if (hasLabel(pr, LABELS.NEEDS_REVISION)) {
       const revisionLabeledAt = await getLastNeedsRevisionLabeledDate(github, owner, repo, pr.number);
-      const prActivity = await computePRLastActivity(github, owner, repo, pr);
-      lastActivity = latestOf(prActivity, revisionLabeledAt);
+      const prActivityResult = await computePRLastActivity(github, owner, repo, pr, { includeWorkingComment: true });
+      lastActivity = latestOf(prActivityResult.timestamp, revisionLabeledAt);
+      workingComment = prActivityResult.workingComment;
     } else {
-      lastActivity = await computePRLastActivity(github, owner, repo, pr);
+      const prActivityResult = await computePRLastActivity(github, owner, repo, pr, { includeWorkingComment: true });
+      lastActivity = prActivityResult.timestamp;
+      workingComment = prActivityResult.workingComment;
+    }
+
+    // Add reaction if /working command was found on linked issue
+    if (workingComment) {
+      try {
+        await github.rest.reactions.createForIssueComment({
+          owner,
+          repo,
+          comment_id: workingComment.id,
+          content: 'eyes',
+        });
+        logger.log(`Added reaction to /working comment on issue #${workingComment.id}`);
+      } catch (err) {
+        logger.log(`Could not add reaction to /working comment: ${err.message}`);
+      }
     }
 
     const result = await handleStaleItem(github, owner, repo, pr, lastActivity, 'PR', nowMs);

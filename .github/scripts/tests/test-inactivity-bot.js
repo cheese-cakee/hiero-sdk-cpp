@@ -797,7 +797,7 @@ const scenarios = [
         250: [makeLabeledEvent(LABELS.NEEDS_REVISION, daysAgo(8))], 
       },
     }),
-expect: {
+    expect: {
       itemsClosed: [250],
       closureCommentOn: [250],
       assigneesRemoved: [{ issue_number: 250, assignees: ['uri'] }],
@@ -904,8 +904,8 @@ expect: {
 
   // ── 29 ─────────────────────────────────────────────────────────────────────
   {
-    name: 'PR: /working command on linked issue — no action (not stale)',
-    description: 'When author posts /working on linked issue, the PR should not be flagged as stale.',
+    name: 'PR: comment on linked issue — no action (not stale)',
+    description: 'A participant comment on a linked issue should reset PR inactivity.',
     github: createMockGithub({
       openPRs: [
         makePR(500, {
@@ -939,8 +939,8 @@ expect: {
 
   // ── 30 ─────────────────────────────────────────────────────────────────────
   {
-    name: 'PR: regular comment (not /working) on linked issue — still stale, closed',
-    description: 'A regular comment without /working on linked issue should NOT reset the clock.',
+    name: 'PR: regular comment on linked issue — no action (not stale)',
+    description: 'Any participant comment on linked issue should reset the clock.',
     github: createMockGithub({
       openPRs: [
         makePR(510, {
@@ -965,9 +965,10 @@ expect: {
       },
     }),
     expect: {
-      itemsClosed: [510],
-      closureCommentOn: [510],
-      assigneesRemoved: [{ issue_number: 510, assignees: ['bob'] }],
+      itemsClosed: [],
+      commentsCreated: 0,
+      labelsAdded: 0,
+      assigneesRemoved: 0,
     },
   },
 

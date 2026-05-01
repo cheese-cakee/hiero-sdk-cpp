@@ -992,6 +992,40 @@ const scenarios = [
       assigneesRemoved: [{ issue_number: 520, assignees: ['charlie'] }],
     },
   },
+
+  // ── 32 ─────────────────────────────────────────────────────────────────────
+  {
+    name: 'PR: non-participant comment on linked issue — still stale, closed',
+    description: 'A comment from someone who is not the PR author/assignee must not reset inactivity.',
+    github: createMockGithub({
+      openPRs: [
+        makePR(530, {
+          createdAt: daysAgo(8),
+          assignees: ['diana'],
+          authorLogin: 'diana',
+          body: 'Fixes #531',
+        }),
+      ],
+      assignedIssues: [
+        makeIssue(531, {
+          createdAt: daysAgo(8),
+          assignees: ['diana'],
+          labels: [LABELS.IN_PROGRESS],
+        }),
+      ],
+      commentsByNumber: {
+        531: [makeComment('outsider', daysAgo(1), { body: 'Any update here?' })],
+      },
+      eventsByNumber: {
+        531: [makeAssignedEvent(daysAgo(8))],
+      },
+    }),
+    expect: {
+      itemsClosed: [530],
+      closureCommentOn: [530],
+      assigneesRemoved: [{ issue_number: 530, assignees: ['diana'] }],
+    },
+  },
 ];
 
 // =============================================================================

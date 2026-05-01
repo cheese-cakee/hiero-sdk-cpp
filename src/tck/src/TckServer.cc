@@ -57,6 +57,8 @@
 #include "topic/params/DeleteTopicParams.h"
 #include "topic/params/GetTopicInfoQueryParams.h"
 #include "topic/params/TopicMessageSubmitParams.h"
+#include "schedule/ScheduleService.h"
+#include "schedule/params/DeleteScheduleParams.h"
 #include "json/JsonUtils.h"
 
 namespace Hiero::TCK
@@ -115,6 +117,9 @@ TckServer::TckServer(int port)
   mJsonRpcParser.addMethod("deleteTopic", getHandle(TopicService::deleteTopic));
   mJsonRpcParser.addMethod("getTopicInfo", getHandle(TopicService::getTopicInfo));
   mJsonRpcParser.addMethod("submitTopicMessage", getHandle(TopicService::submitTopicMessage));
+
+  // Schedule Service
+  mJsonRpcParser.addMethod("deleteSchedule", getHandle(ScheduleService::deleteSchedule));
 
   // Contract Service
   mJsonRpcParser.addMethod("createContract", getHandle(ContractService::createContract));
@@ -275,5 +280,7 @@ template TckServer::MethodHandle TckServer::getHandle<TopicService::GetTopicInfo
   nlohmann::json (*method)(const TopicService::GetTopicInfoQueryParams&));
 template TckServer::MethodHandle TckServer::getHandle<TopicService::TopicMessageSubmitParams>(
   nlohmann::json (*method)(const TopicService::TopicMessageSubmitParams&));
+template TckServer::MethodHandle TckServer::getHandle<ScheduleService::DeleteScheduleParams>(
+  nlohmann::json (*method)(const ScheduleService::DeleteScheduleParams&));
 
 } // namespace Hiero::TCK

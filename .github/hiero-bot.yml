@@ -1,0 +1,40 @@
+# Hiero Workflow App — Test configuration for hiero-sdk-cpp
+
+_extends: hiero-bot
+
+assignment:
+  enabled: true
+  commands:
+    - /assign
+    - /unassign
+  max_open_assignments: 3
+  cross_repo_prerequisites: false
+  status_labels:
+    ready: status: ready for dev
+    in_progress: status: in progress
+    blocked: status: blocked
+    needs_review: status: needs review
+  skill_levels:
+    skill: good first issue:
+      max_completions: 3
+      display_name: Good First Issue
+    skill: beginner:
+      prerequisites:
+        label: skill: good first issue
+        min_completed: 1
+      display_name: Beginner
+
+pr_quality:
+  enabled: true
+  unified_dashboard: true
+  checks:
+    dco: true
+    gpg: true
+    merge_conflict: true
+    linked_issue: true
+    conventional_title: true
+    linked_issue_assigned: false
+  draft_explainer: true
+
+audit:
+  include_reason_in_comments: true

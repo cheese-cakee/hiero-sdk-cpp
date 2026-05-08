@@ -10,17 +10,17 @@ assignment:
   max_open_assignments: 3
   cross_repo_prerequisites: false
   status_labels:
-    ready: status: ready for dev
-    in_progress: status: in progress
-    blocked: status: blocked
-    needs_review: status: needs review
+    ready: "status: ready for dev"
+    in_progress: "status: in progress"
+    blocked: "status: blocked"
+    needs_review: "status: needs review"
   skill_levels:
-    skill: good first issue:
+    "skill: good first issue":
       max_completions: 3
       display_name: Good First Issue
-    skill: beginner:
+    "skill: beginner":
       prerequisites:
-        label: skill: good first issue
+        label: "skill: good first issue"
         min_completed: 1
       display_name: Beginner
 
